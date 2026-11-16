@@ -1,5 +1,7 @@
 from html import escape
 from math import atan2, cos, pi, sin
+from collections import Counter
+
 
 import networkx as nx
 import plotly.graph_objects as go
@@ -224,4 +226,101 @@ def show_once(graph):
         if not webbrowser.open(url):
             print(f"Open this address within 60 seconds: {url}")
         server.handle_request()
+
+
+def degree_centrality(graph, log_log=False):
+    """Plota graus de entrada e saída; log_log ativa escalas logarítmicas."""
+    # Exclui placeholders, mas mantém tags (any) como nós da rede.
+    nodes = [
+        node for node, data in graph.nodes(data=True)
+        if not data.get("unresolved")
+    ]
+    # Limita os cálculos aos nós selecionados, sem modificar o grafo original.
+    analysis_graph = graph.subgraph(nodes)
+    node_count = len(nodes)
+
+    # Graus contam vizinhos distintos, não receitas; entrada são ingredientes conectados.
+    # Cada par (nó, grau) permite exibir os nomes no hover.
+    degree_sequences = {
+        "Grau de entrada:": [
+            (node, analysis_graph.in_degree(node)) for node in nodes
+        ],
+        "Grau de saída:": [
+            (node, analysis_graph.out_degree(node)) for node in nodes
+        ],
+    }
+
+    # Inicializa a figura Plotly; cada série representa uma direção do grau.
+    figure = go.Figure()
+
+    for name, node_degrees in degree_sequences.items():
+        # Agrupa os nós por grau para calcular a frequência de cada valor k.
+        nodes_by_degree = {}
+        for node, degree in node_degrees:
+            # Grau zero só é omitido no modo log, pois log(0) não é definido.
+            if not log_log or degree > 0:
+                nodes_by_degree.setdefault(degree, []).append(node)
+        # Counter registra quantos nós têm cada grau.
+        count = Counter({degree: len(items) for degree, items in nodes_by_degree.items()})
+        if not count:
+            # Sem graus positivos, não há pontos para a escala logarítmica.
+            continue
+        # Ordena graus e frequências para usá-los nos eixos X e Y.
+        degree_values, frequency = zip(*sorted(count.items()))
+        hover_nodes = []
+        for degree in degree_values:
+            matching_nodes = nodes_by_degree[degree]
+            # Limita o hover a 30 nomes e escapa caracteres especiais de HTML.
+            labels = [escape(node) for node in matching_nodes[:30]]
+            remaining = len(matching_nodes) - len(labels)
+            if remaining:
+                labels.append(f"... e mais {remaining} nós")
+            hover_nodes.append("<br>".join(labels))
+
+        # customdata e hovertemplate mostram grau, frequência e nomes ao passar o mouse.
+        hover_options = {
+            "customdata": hover_nodes,
+            "hovertemplate": (
+                "Grau: %{x}<br>Frequência: %{y}<br><br>" 
+                "Nós:<br>%{customdata}<extra>%{fullData.name}</extra>"
+            ),
+        }
+        # Barras mostram a distribuição; marcadores são usados na escala log-log.
+        if log_log:
+            figure.add_trace(go.Scatter(
+                x=degree_values,
+                y=frequency,
+                mode="markers",
+                name=name,
+                **hover_options,
+            ))
+        else:
+            figure.add_trace(go.Bar(
+                x=degree_values,
+                y=frequency,
+                name=name,
+                **hover_options,
+            ))
+
+    # A escala log-log ajuda a examinar a cauda, mas não prova uma lei de potência.
+    # update_layout define títulos, escalas, aparência e legenda.
+    figure.update_layout(
+        title=(
+            f"Distribuição de grau{' (log-log)' if log_log else ''}: "
+            f"{node_count} nós"
+        ),
+        xaxis={
+            "title": "Grau k" if not log_log else "Grau k (k > 0)",
+            "type": "log" if log_log else "linear",
+        },
+        yaxis={"title": "Frequência", "type": "log" if log_log else "linear"},
+        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
+        margin={"l": 15, "r": 15, "t": 60, "b": 15},
+        legend={"orientation": "h", "y": 1.04},
+        # Coloca as barras de entrada e saída lado a lado para cada grau.
+        barmode="group",
+    )
+
+    # Devolve a figura pronta; quem chamou a função decide se usa .show() ou a salva.
+    return figure
 # JsEnd
