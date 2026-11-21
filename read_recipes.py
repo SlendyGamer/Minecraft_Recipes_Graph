@@ -88,18 +88,8 @@ def build_graph(recipe_directory):
             recipe = json.load(source)
         recipe_id = "minecraft:" + path.relative_to(recipe_directory).with_suffix("").as_posix()
         crafting_method = CRAFTING_METHODS.get(recipe.get("type"))
+        # Tipos sem suporte (receitas especiais, smithing_trim...) não entram no grafo.
         if crafting_method is None:
-            graph.add_node(
-                f"unresolved_recipe:{recipe_id}",
-                recipe_id=recipe_id,
-                crafting_method=recipe["type"].removeprefix("minecraft:"),
-                unresolved=True,
-            )
-            ignored_recipes.append({
-                "recipe_id": recipe_id,
-                "crafting_method": recipe["type"].removeprefix("minecraft:"),
-            })
-            skipped_count += 1
             continue
 
         output_item = recipe["result"]["id"]
@@ -170,6 +160,16 @@ def main():
         action="store_true",
         help="Read recipes without opening the Plotly visualization.",
     )
+    parser.add_argument(
+        "--fragility",
+        action="store_true",
+        help="Print which items stop being craftable without each base resource.",
+    )
+    parser.add_argument(
+        "--communities",
+        action="store_true",
+        help="Detect item families (Louvain) and the items that bridge them.",
+    )
     args = parser.parse_args()
     graph = build_graph(args.recipe_directory)
     print(f"Nodes: {graph.number_of_nodes()}")
@@ -179,11 +179,40 @@ def main():
     print(f"Ignored recipes/variants: {graph.graph['skipped_recipes']}")
     print(f"Duplicates: {graph.graph['duplicate_recipes']}")
     for recipe in graph.graph["ignored_recipes"]:
-        reason = (
-            f"duplicate of {recipe['duplicate_of']}"
-            if "duplicate_of" in recipe else "unresolved; isolated placeholder"
-        )
+        reason = f"duplicate of {recipe['duplicate_of']}"
         print(f"Ignored: {recipe['recipe_id']} ({recipe['crafting_method']}; {reason})")
+    if args.fragility:
+        from analytics import resource_fragility, short_name
+
+        result = resource_fragility(graph)
+        print(f"Craftable with all base resources: {len(result['baseline'])}")
+        print(f"Unreachable (loot-only or unsourced cycles): {len(result['unreachable'])}")
+        print("Items lost without each resource:")
+        for row in result["by_resource"][:15]:
+            print(f"  {short_name(row['name'])}: {len(row['lost'])}")
+        if not args.no_plot:
+            from plot_graph import show_fragility
+
+            show_fragility(result)
+    if args.communities:
+        from analytics import detect_communities, short_name
+
+        result = detect_communities(graph)
+        print(
+            f"Communities: {len(result['communities'])}; "
+            f"modularity {result['modularity']:.3f} "
+            f"(null model {result['null_modularity']:.3f})"
+        )
+        for community in result["communities"][:15]:
+            names = ", ".join(short_name(node) for node in community["top"])
+            print(f"  #{community['id']} ({community['size']}): {names}")
+        print("Bridge items (neighbouring communities):")
+        for row in result["bridges"][:10]:
+            print(f"  {short_name(row['name'])}: {row['touches']}")
+        if not args.no_plot:
+            from plot_graph import show_communities
+
+            show_communities(graph, result)
     if not args.no_plot:
         # JsBegin
         from plot_graph import show_once

@@ -69,12 +69,10 @@ O projeto utiliza um `networkx.DiGraph`, com arestas na direção:
 ingrediente → produto
 ```
 
-Existem três tipos de nós:
+Existem dois tipos de nós:
 
 - **Item específico:** por exemplo, `minecraft:stick`.
 - **Tag genérica:** por exemplo, `minecraft:planks(any)`.
-- **Receita não resolvida:** placeholder isolado, como
-  `unresolved_recipe:minecraft:repair_item`.
 
 Há uma única aresta por par ingrediente/produto. Cada aresta contém uma lista
 `recipes`, permitindo representar diferentes receitas entre os mesmos itens:
@@ -122,8 +120,8 @@ e estação são deduplicadas, independentemente da disposição. Shaped e shape
 compartilham a mesma estação para essa comparação. A primeira variante encontrada
 é mantida; as seguintes entram no contador e na lista de ignorados.
 
-Tipos não suportados, como receitas especiais e `smithing_trim`, geram apenas
-placeholders isolados, sem inventar ingredientes ou resultados.
+Tipos não suportados, como receitas especiais e `smithing_trim`, são ignorados:
+não geram nós, arestas nem entram nos contadores.
 
 ## Visualização
 
@@ -132,7 +130,6 @@ completo permanece visível e os nós não têm física, animação ou arraste i
 
 - **Azul:** itens específicos.
 - **Amarelo:** tags `(any)`.
-- **Vermelho:** receitas não resolvidas.
 - **Hover em um nó:** destaca seus vizinhos diretos e esmaece o restante.
 - **Clique em um nó:** colore por `recipe_id` as receitas que produzem aquele item.
 - **Hover nas conexões:** permite consultar métodos e quantidades.
@@ -173,6 +170,54 @@ O grau de saída conta **produtos distintos**, não o número de receitas. Já o
 grau de entrada inclui todos os ingredientes possíveis, inclusive alternativas:
 não significa que todos sejam obrigatórios simultaneamente.
 
+## Análise de fragilidade por recurso
+
+`analytics.py` responde: *se um recurso base deixar de existir, quantos itens
+deixam de ser fabricáveis?*
+
+```powershell
+python .\read_recipes.py --fragility          # imprime a tabela e abre o gráfico
+python .\read_recipes.py --fragility --no-plot
+```
+
+No gráfico, clicar em uma barra mostra no painel lateral a lista completa dos
+itens que deixam de ser fabricáveis sem aquele recurso.
+
+Método: as receitas são reconstruídas pelo `recipe_id` das arestas (todos os
+ingredientes são necessários ao mesmo tempo, ao contrário de um caminho no grafo).
+Parte-se dos recursos base, repetem-se as receitas possíveis até estabilizar e
+remove-se um recurso por vez. Recursos base são os grupos sem entrada externa na
+condensação do grafo, então ciclos como bruto ⇄ bloco bruto contam como um só.
+Tags `(any)` são tratadas como sempre disponíveis. Itens inalcançáveis mesmo com
+todos os recursos (modelos de armadura, netherite, mel) formam a linha de base
+e não entram na contagem de perdas.
+
+O modelo ignora Nether, End, saque e progressão: mede apenas dependência entre receitas.
+
+## Comunidades e itens-ponte
+
+`analytics.py` também responde: *o grafo separa os itens em famílias, e quais
+itens ligam uma família à outra?*
+
+```powershell
+python .\read_recipes.py --communities          # imprime a tabela e abre a figura
+python .\read_recipes.py --communities --no-plot
+```
+
+Método: Louvain (semente fixa) no grafo não dirigido, sem placeholders e sem
+laços. Cada comunidade é descrita pelos itens de maior grau. Item-ponte é um item
+com vizinhos em outras comunidades; o número é quantas comunidades distintas ele toca.
+
+A modularidade é comparada com um modelo nulo (mesmos graus, ligações sorteadas,
+média de 5 amostras). Em grafos esparsos o modelo nulo já tem modularidade alta
+(≈ 0,54 contra ≈ 0,78 no grafo real), então apenas a diferença indica famílias de
+itens. Arestas múltiplas do modelo nulo são colapsadas.
+
+Na figura, as 12 maiores comunidades têm cor própria, as demais ficam em cinza e
+os itens-ponte são circulados com o número de comunidades vizinhas.
+Como as tags `(any)` não são ligadas aos itens que representam, a comunidade
+de `planks(any)` e das camas reflete essa limitação do modelo.
+
 ## Limitações
 
 - Tags `(any)` não são expandidas nem conectadas aos itens específicos que aceitam.
@@ -182,7 +227,7 @@ não significa que todos sejam obrigatórios simultaneamente.
 - Combustíveis, tempo, experiência, componentes de itens e sobras de recipientes
   não são modelados.
 - Expandir listas de alternativas pode gerar muitas variantes de uma receita.
-- Placeholders isolados devem ser tratados separadamente em análises de itens.
+- Receitas especiais e `smithing_trim` não são modeladas.
 - O grafo fica em memória; não há exportação persistente dos dados no fluxo atual.
 
 ## Estrutura
@@ -191,16 +236,18 @@ não significa que todos sejam obrigatórios simultaneamente.
 graph
 ├── read_recipes.py       Leitura, normalização e construção do grafo
 ├── plot_graph.py         Figura Plotly e interações no navegador
+├── analytics.py          Fragilidade por recurso e comunidades (Louvain)
 ├── recipe\               Arquivos JSON de entrada
 ├── requirements.txt      Dependências
 ├── test_read_recipes.py  Testes do leitor e da deduplicação
+├── test_analytics.py     Testes de fragilidade e comunidades
 └── test_plot_graph.py    Testes da página e da abertura única
 ```
 
 ## Testes
 
 ```powershell
-python -m unittest -v test_read_recipes test_plot_graph
+python -m unittest -v test_read_recipes test_plot_graph test_analytics
 ```
 
 Os testes cobrem contagem de ingredientes, alternativas, métodos, deduplicação,

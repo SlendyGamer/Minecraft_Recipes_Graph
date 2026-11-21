@@ -2,6 +2,8 @@ from html import escape
 from math import atan2, cos, pi, sin
 from collections import Counter
 
+from analytics import short_name
+
 
 import networkx as nx
 import plotly.graph_objects as go
@@ -50,13 +52,9 @@ def create_figure(graph):
     groups = {
         "Items": ("#6ab7ff", []),
         "Tags (any)": ("#f6c85f", []),
-        "Unresolved recipes": ("#ef6c6c", []),
     }
-    for node, data in graph.nodes(data=True):
-        group = (
-            "Unresolved recipes" if data.get("unresolved")
-            else "Tags (any)" if node.endswith("(any)") else "Items"
-        )
+    for node in graph.nodes:
+        group = "Tags (any)" if node.endswith("(any)") else "Items"
         groups[group][1].append(node)
     for name, (color, nodes) in groups.items():
         if not nodes:
@@ -203,10 +201,12 @@ document.body.appendChild(clear);
 
 
 def show_once(graph):
+    _serve_once(interactive_html(graph).encode("utf-8"))
+
+
+def _serve_once(content):
     import webbrowser
     from http.server import BaseHTTPRequestHandler, HTTPServer
-
-    content = interactive_html(graph).encode("utf-8")
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -230,13 +230,9 @@ def show_once(graph):
 
 def degree_centrality(graph, log_log=False):
     """Plota graus de entrada e saída; log_log ativa escalas logarítmicas."""
-    # Exclui placeholders, mas mantém tags (any) como nós da rede.
-    nodes = [
-        node for node, data in graph.nodes(data=True)
-        if not data.get("unresolved")
-    ]
-    # Limita os cálculos aos nós selecionados, sem modificar o grafo original.
-    analysis_graph = graph.subgraph(nodes)
+    # Tags (any) fazem parte da rede.
+    nodes = list(graph.nodes)
+    analysis_graph = graph
     node_count = len(nodes)
 
     # Graus contam vizinhos distintos, não receitas; entrada são ingredientes conectados.
@@ -323,4 +319,183 @@ def degree_centrality(graph, log_log=False):
 
     # Devolve a figura pronta; quem chamou a função decide se usa .show() ou a salva.
     return figure
+
+
+def fragility_figure(result, top=25):
+    """Barras horizontais: itens que deixam de ser fabricáveis sem cada recurso base."""
+    rows = list(reversed(result["by_resource"][:top]))
+    figure = go.Figure(go.Bar(
+        x=[len(row["lost"]) for row in rows],
+        y=[short_name(row["name"]) for row in rows],
+        orientation="h", marker={"color": "#4aa3df"},
+        hovertemplate="%{y}: %{x} itens perdidos<extra></extra>",
+    ))
+    figure.update_layout(
+        title=(
+            "Fragilidade: itens que deixam de ser fabricáveis sem o recurso "
+            f"(linha de base: {len(result['baseline'])} itens; tags (any) tratadas como disponíveis)"
+        ),
+        xaxis={"title": "Itens perdidos"},
+        yaxis={"dtick": 1, "automargin": True},
+        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
+        margin={"l": 15, "r": 400, "t": 60, "b": 40},
+    )
+    return figure
+
+
+def fragility_html(result, top=25):
+    """Página com o gráfico e um painel que lista todos os itens perdidos ao clicar."""
+    import json
+
+    figure = fragility_figure(result, top)
+    payload = {
+        short_name(row["name"]): {
+            "members": sorted(short_name(node) for node in row["members"]),
+            "lost": sorted(short_name(node) for node in row["lost"]),
+        }
+        for row in result["by_resource"][:top]
+    }
+    script = r"""
+const plot = document.getElementById('{plot_id}');
+const model = __MODEL__;
+const baseColors = plot.data[0].y.map(() => '#4aa3df');
+const panel = document.createElement('div');
+panel.style.cssText = 'position:fixed;top:60px;right:15px;bottom:15px;' +
+    'overflow:auto;padding:12px;background:#0f1720;color:#dce6f0;' +
+    'font:14px sans-serif;border:1px solid #2a3b4c;box-sizing:border-box;display:none';
+document.body.appendChild(panel);
+function fitPanel() {
+    const width = Math.max(220, Math.min(360, innerWidth * 0.3));
+    panel.style.width = `${width}px`;
+    Plotly.relayout(plot, {'margin.r': width + 30});
+}
+fitPanel();
+window.addEventListener('resize', fitPanel);
+plot.on('plotly_click', event => {
+    const name = event?.points?.[0]?.y;
+    if (!Object.hasOwn(model, name)) return;
+    const entry = model[name];
+    const colors = baseColors.slice();
+    colors[event.points[0].pointIndex] = '#f2b84b';
+    Plotly.restyle(plot, {'marker.color': [colors]}, [0]);
+    panel.replaceChildren();
+    panel.style.display = 'block';
+    const title = document.createElement('h3');
+    title.textContent = `Sem ${entry.members.join(', ')}: ${entry.lost.length} itens`;
+    title.style.margin = '0 0 8px';
+    const list = document.createElement('ul');
+    list.style.cssText = 'margin:0;padding-left:18px';
+    for (const item of entry.lost) {
+        const li = document.createElement('li');
+        li.textContent = item;
+        list.appendChild(li);
+    }
+    panel.append(title, entry.lost.length ? list : 'Nenhum item perdido.');
+});
+"""
+    script = script.replace("__MODEL__", json.dumps(payload).replace("<", "\\u003c"))
+    return figure.to_html(
+        full_html=True, include_plotlyjs=True, post_script=script,
+        config={"displaylogo": False},
+    )
+
+
+def show_fragility(result, top=25):
+    _serve_once(fragility_html(result, top).encode("utf-8"))
+
+
+def communities_figure(graph, result, top=12, bridges=10):
+    """Rede colorida por comunidade; as `top` maiores têm cor própria e as demais são agrupadas."""
+    from analytics import analysis_graph
+
+    undirected = analysis_graph(graph)
+    positions = nx.spring_layout(
+        undirected, seed=42, k=0.16, iterations=80, method="force"
+    )
+    communities = result["communities"]
+    membership = result["membership"]
+    touches = {row["name"]: row["touches"] for row in result["bridges"]}
+
+    edge_x, edge_y = [], []
+    for source, target in undirected.edges:
+        edge_x.extend([positions[source][0], positions[target][0], None])
+        edge_y.extend([positions[source][1], positions[target][1], None])
+    figure = go.Figure(go.Scattergl(
+        x=edge_x, y=edge_y, mode="lines", hoverinfo="skip", showlegend=False,
+        line={"color": "rgba(129,148,165,0.25)", "width": 1},
+    ))
+
+    def add_nodes(name, color, nodes):
+        figure.add_trace(go.Scattergl(
+            x=[positions[node][0] for node in nodes],
+            y=[positions[node][1] for node in nodes],
+            mode="markers", name=name, marker={"color": color, "size": 9},
+            text=[
+                f"{escape(short_name(node))}<br>Comunidade {membership[node]} "
+                f"({communities[membership[node]]['size']} itens)"
+                f"<br>Comunidades vizinhas: {touches.get(node, 0)}"
+                for node in nodes
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        ))
+
+    for community in communities[:top]:
+        label = ", ".join(short_name(node) for node in community["top"][:3])
+        add_nodes(
+            f"{community['size']}: {label}",
+            f"hsl({community['id'] * 137.5 % 360:.0f},75%,62%)",
+            sorted(community["members"]),
+        )
+    rest = [node for community in communities[top:] for node in community["members"]]
+    if rest:
+        add_nodes(
+            f"outras {len(communities) - top} comunidades", "#6b7785", sorted(rest),
+        )
+
+    # Os itens-ponte recebem rótulo, pois são os conectores entre famílias.
+    top_bridges = [row["name"] for row in result["bridges"][:bridges]]
+    figure.add_trace(go.Scattergl(
+        x=[positions[node][0] for node in top_bridges],
+        y=[positions[node][1] for node in top_bridges],
+        mode="markers+text", name="itens-ponte",
+        text=[f"{short_name(node)} ({touches[node]})" for node in top_bridges],
+        textposition=[
+            ["top center", "bottom center", "middle right", "middle left"][index % 4]
+            for index in range(len(top_bridges))
+        ],
+        textfont={"color": "#ffffff", "size": 12},
+        marker={
+            "size": 14, "color": "rgba(0,0,0,0)",
+            "line": {"color": "#ffffff", "width": 2},
+        },
+        hoverinfo="skip",
+    ))
+
+    null = result["null_modularity"]
+    null_text = f"; modelo nulo: {null:.3f}" if null is not None else ""
+    figure.update_layout(
+        title=(
+            f"Comunidades (Louvain): {len(communities)} grupos, "
+            f"modularidade {result['modularity']:.3f}{null_text}. "
+            "Itens-ponte circulados: número de comunidades vizinhas"
+        ),
+        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
+        dragmode="pan", hovermode="closest",
+        margin={"l": 15, "r": 15, "t": 60, "b": 15},
+        xaxis={"visible": False},
+        yaxis={"visible": False, "scaleanchor": "x", "scaleratio": 1},
+        legend={"orientation": "v", "x": 1.01, "y": 1},
+    )
+    return figure
+
+
+def communities_html(graph, result):
+    return communities_figure(graph, result).to_html(
+        full_html=True, include_plotlyjs=True,
+        config={"scrollZoom": True, "displaylogo": False},
+    )
+
+
+def show_communities(graph, result):
+    _serve_once(communities_html(graph, result).encode("utf-8"))
 # JsEnd

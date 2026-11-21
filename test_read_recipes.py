@@ -73,12 +73,9 @@ class RecipeTests(unittest.TestCase):
                  "crafting_method": "shaped"},
             ],
         )
-        self.assertEqual(graph.graph["skipped_recipes"], 1)
-        self.assertEqual(graph.degree("unresolved_recipe:minecraft:ignored"), 0)
-        self.assertEqual(graph.graph["ignored_recipes"], [{
-            "recipe_id": "minecraft:ignored",
-            "crafting_method": "crafting_special_repairitem",
-        }])
+        self.assertEqual(graph.graph["skipped_recipes"], 0)
+        self.assertEqual(graph.graph["ignored_recipes"], [])
+        self.assertEqual(set(graph.nodes), {"minecraft:oak_log", "minecraft:oak_planks"})
 
     def test_processing_methods_preserve_parallel_recipe_records(self):
         methods = {
