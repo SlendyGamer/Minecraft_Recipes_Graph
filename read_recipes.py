@@ -170,6 +170,16 @@ def main():
         action="store_true",
         help="Detect item families (Louvain) and the items that bridge them.",
     )
+    parser.add_argument(
+        "--pagerank",
+        action="store_true",
+        help="Rank items by PageRank in both edge directions.",
+    )
+    parser.add_argument(
+        "--centrality",
+        action="store_true",
+        help="Rank items by betweenness and closeness in the largest component.",
+    )
     args = parser.parse_args()
     graph = build_graph(args.recipe_directory)
     print(f"Nodes: {graph.number_of_nodes()}")
@@ -213,6 +223,51 @@ def main():
             from plot_graph import show_communities
 
             show_communities(graph, result)
+    if args.pagerank:
+        from analytics import pagerank_rankings, short_name
+
+        result = pagerank_rankings(graph)
+        for key, title in (
+            ("normal", "PageRank normal (ingrediente -> produto)"),
+            ("reverse", "PageRank reverso (produto -> ingrediente)"),
+        ):
+            print(title)
+            for row in result[key]:
+                print(
+                    f"  {row['score']:.5f}  {short_name(row['name'])}"
+                    f" (in={row['in_degree']}, out={row['out_degree']})"
+                )
+        if not args.no_plot:
+            from plot_graph import show_pagerank
+
+            show_pagerank(result)
+    if args.centrality:
+        from analytics import centrality_report, short_name
+
+        result = centrality_report(graph)
+        print(f"Largest component: {result['component_size']} of {result['node_count']} nodes")
+        for key, title in (("betweenness", "Betweenness"), ("closeness", "Closeness")):
+            print(title)
+            for row in result[key]:
+                print(
+                    f"  {row['score']:.5f}  {short_name(row['name'])}"
+                    f" (degree={row['degree']})"
+                )
+        print("Candidates (degree, PageRank reverse, betweenness, closeness, bridge):")
+        for row in result["profile"]:
+            values = [
+                "-" if row[key] is None else f"{row[key]:.5f}"
+                for key in ("pagerank_reverse", "betweenness", "closeness")
+            ]
+            print(
+                f"  {short_name(row['name'])}: degree={row['degree']}, "
+                f"pagerank={values[0]}, betweenness={values[1]}, "
+                f"closeness={values[2]}, bridge={row['bridge_touches']}"
+            )
+        if not args.no_plot:
+            from plot_graph import show_centrality
+
+            show_centrality(result)
     if not args.no_plot:
         # JsBegin
         from plot_graph import show_once

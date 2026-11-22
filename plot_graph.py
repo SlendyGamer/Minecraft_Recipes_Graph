@@ -404,6 +404,92 @@ def show_fragility(result, top=25):
     _serve_once(fragility_html(result, top).encode("utf-8"))
 
 
+def pagerank_figure(result):
+    """Barras horizontais lado a lado: PageRank normal e reverso."""
+    from plotly.subplots import make_subplots
+
+    figure = make_subplots(
+        rows=1, cols=2, horizontal_spacing=0.2,
+        subplot_titles=(
+            "Normal (ingrediente → produto)",
+            "Reverso (produto → ingrediente)",
+        ),
+    )
+    for column, (key, color) in enumerate(
+        (("normal", "#f2b84b"), ("reverse", "#4aa3df")), start=1
+    ):
+        rows = list(reversed(result[key]))
+        figure.add_trace(go.Bar(
+            x=[row["score"] for row in rows],
+            y=[short_name(row["name"]) for row in rows],
+            orientation="h", marker={"color": color},
+            customdata=[[row["in_degree"], row["out_degree"]] for row in rows],
+            hovertemplate=(
+                "%{y}<br>PageRank: %{x:.5f}"
+                "<br>Grau de entrada: %{customdata[0]}"
+                "<br>Grau de saída: %{customdata[1]}<extra></extra>"
+            ),
+        ), row=1, col=column)
+    figure.update_xaxes(title_text="PageRank")
+    figure.update_yaxes(dtick=1, automargin=True)
+    figure.update_layout(
+        title="PageRank nos dois sentidos das receitas", showlegend=False,
+        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
+        margin={"l": 15, "r": 15, "t": 80, "b": 40},
+    )
+    return figure
+
+
+def show_pagerank(result):
+    html = pagerank_figure(result).to_html(
+        full_html=True, include_plotlyjs=True, config={"displaylogo": False},
+    )
+    _serve_once(html.encode("utf-8"))
+
+
+
+def centrality_figure(result):
+    """Barras horizontais lado a lado: betweenness e closeness no maior componente."""
+    from plotly.subplots import make_subplots
+
+    figure = make_subplots(
+        rows=1, cols=2, horizontal_spacing=0.2,
+        subplot_titles=("Betweenness", "Closeness"),
+    )
+    for column, (key, color) in enumerate(
+        (("betweenness", "#7bd88f"), ("closeness", "#c792ea")), start=1
+    ):
+        rows = list(reversed(result[key]))
+        figure.add_trace(go.Bar(
+            x=[row["score"] for row in rows],
+            y=[short_name(row["name"]) for row in rows],
+            orientation="h", marker={"color": color},
+            customdata=[row["degree"] for row in rows],
+            hovertemplate=(
+                "%{y}<br>Valor: %{x:.5f}<br>Grau: %{customdata}<extra></extra>"
+            ),
+        ), row=1, col=column)
+    figure.update_xaxes(title_text="Centralidade")
+    figure.update_yaxes(dtick=1, automargin=True)
+    figure.update_layout(
+        title=(
+            f"Centralidade no maior componente: {result['component_size']} "
+            f"de {result['node_count']} nós"
+        ),
+        showlegend=False,
+        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
+        margin={"l": 15, "r": 15, "t": 80, "b": 40},
+    )
+    return figure
+
+
+def show_centrality(result):
+    html = centrality_figure(result).to_html(
+        full_html=True, include_plotlyjs=True, config={"displaylogo": False},
+    )
+    _serve_once(html.encode("utf-8"))
+
+
 def communities_figure(graph, result, top=12, bridges=10):
     """Rede colorida por comunidade; as `top` maiores têm cor própria e as demais são agrupadas."""
     from analytics import analysis_graph

@@ -149,3 +149,74 @@ def detect_communities(graph, seed=1, null_samples=5):
 
 def short_name(node):
     return str(node).removeprefix("minecraft:")
+
+
+def pagerank_rankings(graph, top=15, alpha=0.85):
+    """PageRank nos dois sentidos das arestas (ingrediente → produto).
+
+    Normal: a importância flui dos ingredientes para os produtos e destaca itens
+    no fim de cadeias de dependência. Reverso: flui dos produtos para os
+    ingredientes e destaca recursos dos quais muitos itens dependem.
+    """
+    def ranking(directed):
+        scores = nx.pagerank(directed, alpha=alpha)
+        ordered = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))
+        return [
+            {
+                "name": node,
+                "score": score,
+                "in_degree": graph.in_degree(node),
+                "out_degree": graph.out_degree(node),
+            }
+            for node, score in ordered[:top]
+        ]
+
+    return {"normal": ranking(graph), "reverse": ranking(graph.reverse(copy=False))}
+
+
+def centrality_report(graph, top=15, candidates=None, candidate_count=6):
+    """Betweenness e closeness no maior componente, mais um perfil dos candidatos.
+
+    Caminhos mínimos só existem entre nós conectados, então o cálculo usa o maior
+    componente do grafo não dirigido e sem laços (o mesmo de `analysis_graph`).
+    O perfil junta, para cada candidato, grau, PageRank reverso, betweenness,
+    closeness e quantas comunidades vizinhas ele toca (item-ponte). Sem
+    `candidates`, são os `candidate_count` maiores do PageRank reverso.
+    """
+    undirected = analysis_graph(graph)
+    component = undirected.subgraph(max(nx.connected_components(undirected), key=len))
+    betweenness = nx.betweenness_centrality(component)
+    closeness = nx.closeness_centrality(component)
+    pagerank = nx.pagerank(graph.reverse(copy=False))
+    if candidates is None:
+        candidates = sorted(pagerank, key=lambda node: (-pagerank[node], node))[:candidate_count]
+    bridges = {
+        row["name"]: row["touches"]
+        for row in detect_communities(graph, null_samples=0)["bridges"]
+    }
+
+    def ranking(scores):
+        ordered = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))
+        return [
+            {"name": node, "score": score, "degree": component.degree(node)}
+            for node, score in ordered[:top]
+        ]
+
+    profile = [
+        {
+            "name": node,
+            "degree": component.degree(node) if node in component else None,
+            "pagerank_reverse": pagerank.get(node),
+            "betweenness": betweenness.get(node),
+            "closeness": closeness.get(node),
+            "bridge_touches": bridges.get(node, 0),
+        }
+        for node in candidates
+    ]
+    return {
+        "component_size": component.number_of_nodes(),
+        "node_count": undirected.number_of_nodes(),
+        "betweenness": ranking(betweenness),
+        "closeness": ranking(closeness),
+        "profile": profile,
+    }

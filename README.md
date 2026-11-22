@@ -5,8 +5,8 @@ grafo dirigido, utilizando **NetworkX** para a estrutura e
 **Plotly Graph Objects** para a visualização.
 
 O objetivo é explorar dependências entre itens e fornecer uma base para análises
-de algoritmos de grafos, como graus, PageRank, alcance e componentes conexas.
-Essas análises e o cálculo de materiais ainda não estão implementados.
+de algoritmos de grafos, como graus, PageRank, centralidade, comunidades e
+fragilidade. O cálculo de materiais ainda não está implementado.
 
 ## Instalação
 
@@ -218,6 +218,120 @@ os itens-ponte são circulados com o número de comunidades vizinhas.
 Como as tags `(any)` não são ligadas aos itens que representam, a comunidade
 de `planks(any)` e das camas reflete essa limitação do modelo.
 
+## PageRank nos dois sentidos
+
+`analytics.py` também responde: *quais itens concentram mais importância nas
+cadeias de receitas?*
+
+```powershell
+python .\read_recipes.py --pagerank          # imprime os rankings e abre o gráfico
+python .\read_recipes.py --pagerank --no-plot
+```
+
+O PageRank (α = 0,85) é calculado duas vezes, sobre as arestas `ingrediente → produto`:
+
+- **Normal:** a importância flui dos ingredientes para os produtos. Destaca itens
+  no fim de cadeias de dependência (nuggets, esmeralda, camas e tapetes).
+- **Reverso** (grafo invertido, produto → ingrediente): destaca os recursos dos quais
+  muitos itens dependem (`stick`, `planks(any)`, `iron_ingot`). É o mais indicado
+  para apontar os itens mais importantes.
+
+Ciclos de conversão (nugget ⇄ lingote, bruto ⇄ bloco bruto) inflam alguns valores,
+como `raw_iron` e `emerald`. A tabela mostra também os graus de entrada e saída.
+
+## Betweenness e closeness
+
+`analytics.py` também responde: *quais itens ficam no meio dos caminhos e quais
+ficam mais perto de todos os outros?*
+
+```powershell
+python .\read_recipes.py --centrality          # imprime os rankings e abre o gráfico
+python .\read_recipes.py --centrality --no-plot
+```
+
+Método: caminhos mínimos só existem entre nós conectados, então o cálculo usa o
+**maior componente** do grafo não dirigido, sem laços (o mesmo `analysis_graph`
+das comunidades). Na versão 1.21.1 são 938 dos 1013 nós. Tags `(any)` ficam no grafo.
+Betweenness e closeness são as normalizadas do NetworkX.
+
+O terminal imprime os 15 maiores de cada métrica e um **perfil dos candidatos**
+(por padrão, os 6 maiores do PageRank reverso) com grau, PageRank reverso,
+betweenness, closeness e número de comunidades vizinhas (item-ponte). Para itens
+específicos, passe `candidates=("minecraft:diamond", ...)` a `centrality_report`;
+`candidate_count` muda a quantidade do padrão.
+
+Leitura: a closeness só é informativa nas primeiras posições, pois depois delas lidera
+quem está no meio de grupos densos (camas, ferramentas de diamante). Em um grafo
+dirigido quase acíclico, a betweenness dirigida fica muito pequena e favorece
+conversões curtas (corantes, nuggets), por isso não é usada aqui.
+
+## Vértices mais importantes
+
+Escolha do grupo: **`stick`, `planks(any)` e `iron_ingot`**. Como `planks(any)` é um
+conjunto de itens (uma tag), e não um item, se ele for desconsiderado o top 3 passa a
+ser **`stick`, `iron_ingot` e `cobblestone`**.
+
+| Item | Grau de saída | PageRank reverso | Betweenness | Closeness | Comunidades vizinhas | Itens perdidos sem ele |
+|---|---|---|---|---|---|---|
+| `stick` | 94 | 0,01659 | 0,440 | 0,275 | 9 | 105 (10,7%) |
+| `planks(any)` | 39 | 0,01460 | 0,225 | 0,277 | 8 | 59 (6,0%) |
+| `iron_ingot` | 35 | 0,01241 | 0,122 | 0,219 | 4 | 53 (5,4%) |
+| `cobblestone` | 15 | 0,01011 | 0,071 | 0,225 | 3 | 60 (6,1%) |
+
+"Itens perdidos" são os itens que deixam de ser fabricáveis (de 983) se o item e a
+receita que o produz forem removidos, usando `craftable_items`, o mesmo ponto fixo da
+fragilidade. Os demais valores vêm de `--pagerank` e `--centrality`.
+
+**Critério:** o número de itens perdidos não decide sozinho; pesa o quanto cada item
+perdido é essencial para progredir. O `string` perde 90 itens, o segundo maior valor do
+grafo, mas 64 deles são variantes de cor (16 de lã, cama, tapete e bandeira) e outros 17
+são velas. Ele não sustenta nada indispensável, por isso não entra no top 3.
+
+**`stick`:** é a base de todas as ferramentas (picaretas, pás, machados, enxadas e
+espadas), de armas como arco, besta e flecha, e de muitos itens de construção usados em
+abundância: cercas, portões, placas e bandeiras. Lidera em quase todas as métricas:
+maior grau (94 itens dependem dele), maior betweenness (44% dos caminhos mais curtos
+passam por ele), maior PageRank reverso e a maior perda (105 itens). Liga 9
+comunidades, então é o item que mais conecta as famílias do grafo.
+
+**`planks(any)`:** concentra a madeira. Tem a maior closeness (0,277), ou seja, é o nó
+mais próximo de todos os outros, e a segunda maior betweenness e PageRank reverso. Um
+detalhe de modelagem: as tags `(any)` são tratadas como sempre disponíveis na análise de
+fragilidade, então o valor de 59 itens perdidos remove a tag de propósito, para medir sua
+influência. Por ser um conjunto de itens, ele é a exceção do top 3 alternativo.
+
+**`iron_ingot`:** é o principal material intermediário: 35 itens dependem dele, entre
+ferramentas e armaduras de ferro, trilhos, balde, funil, tesoura, bússola, êmbolo e
+bigorna. Tem o terceiro maior PageRank reverso e 4 comunidades vizinhas. Sem ele, o
+jogador fica sem a picareta de ferro, a única capaz de minerar o primeiro diamante: as
+picaretas de diamante e de netherita exigem diamante para serem fabricadas (regra do
+jogo, fora do grafo, já que o modelo não representa a ferramenta exigida para minerar).
+Sem diamante, e sem fontes externas como saque, o progresso trava no início do jogo:
+nada de ferramentas de diamante nem de netherita. Também deixam de existir o balde, a
+tesoura, o funil, a bigorna e a mesa de ferraria. Sua fonte é redundante (minério,
+minério de deepslate, `raw_iron` e blocos), por isso remover o `raw_iron` não faz
+perder nenhum item na fragilidade (0). Já faltar o lingote em si custa 53 itens: o item
+é essencial, mas o suprimento é robusto.
+
+**`cobblestone`:** é o segundo recurso base mais frágil (60 itens perdidos, atrás apenas
+de `string`, com 90). Sem ele deixam de ser fabricáveis as pedras e tijolos de pedra, os
+degraus, lajes e muros, o granito, o diorito e o andesito (inclusive polidos) e o
+`stonecutter`. Perdem-se também os itens de redstone, como êmbolo, êmbolo pegajoso,
+observador, dispensador, liberador, repetidor, comparador, alavanca, botão de pedra,
+placa de pressão e trilho detector. O `blast_furnace`, o `grindstone` e o `lodestone`
+também deixam de ser fabricáveis. O forno comum **não** é afetado no modelo, pois a
+receita dele usa a tag `stone_crafting_materials(any)`, tratada como sempre disponível.
+Por ser recurso base, perde para o `iron_ingot` em centralidade (grau 15, betweenness
+0,071) e em importância dos itens que sustenta: o `cobblestone` bloqueia construção e
+redstone, mas não impede o jogador de avançar, enquanto a falta de ferro o corta da
+mineração de diamante. Por isso fica em terceiro, mesmo perdendo mais itens (60 contra
+53).
+
+Ressalvas: o PageRank reverso de `raw_iron` (0,00985) e `emerald` é inflado pelos ciclos
+de conversão bruto ⇄ bloco, por isso não entram no top 3. A betweenness dirigida,
+muito baixa em um grafo quase acíclico, destaca conversões curtas (corantes e nuggets)
+e também não foi usada.
+
 ## Limitações
 
 - Tags `(any)` não são expandidas nem conectadas aos itens específicos que aceitam.
@@ -236,11 +350,11 @@ de `planks(any)` e das camas reflete essa limitação do modelo.
 graph
 ├── read_recipes.py       Leitura, normalização e construção do grafo
 ├── plot_graph.py         Figura Plotly e interações no navegador
-├── analytics.py          Fragilidade por recurso e comunidades (Louvain)
+├── analytics.py          Fragilidade, comunidades (Louvain), PageRank e centralidade
 ├── recipe\               Arquivos JSON de entrada
 ├── requirements.txt      Dependências
 ├── test_read_recipes.py  Testes do leitor e da deduplicação
-├── test_analytics.py     Testes de fragilidade e comunidades
+├── test_analytics.py     Testes de fragilidade, comunidades, PageRank e centralidade
 └── test_plot_graph.py    Testes da página e da abertura única
 ```
 
@@ -251,4 +365,5 @@ python -m unittest -v test_read_recipes test_plot_graph test_analytics
 ```
 
 Os testes cobrem contagem de ingredientes, alternativas, métodos, deduplicação,
-geração da página interativa e entrega por servidor de requisição única.
+geração da página interativa, entrega por servidor de requisição única, fragilidade,
+comunidades, PageRank e centralidade.
