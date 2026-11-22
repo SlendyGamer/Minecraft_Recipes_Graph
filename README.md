@@ -218,6 +218,30 @@ os itens-ponte são circulados com o número de comunidades vizinhas.
 Como as tags `(any)` não são ligadas aos itens que representam, a comunidade
 de `planks(any)` e das camas reflete essa limitação do modelo.
 
+## Comparação com grafos sintéticos
+
+`compare_synthetic.py` compara o grafo de receitas com três modelos equivalentes
+(mesmo número de nós e aproximadamente de arestas): **ER** (aleatório),
+**BA** (livre de escala) e **Watts-Strogatz** (small world).
+
+```powershell
+python .\compare_synthetic.py                 # tabela, CSV e gráficos em .\figures_synthetic
+python .\compare_synthetic.py --samples 30    # mais sorteios por modelo
+python .\compare_synthetic.py --ws-p 0.05     # outra probabilidade de religação
+python .\compare_synthetic.py --no-plot       # só a tabela
+```
+
+Método: os modelos são não dirigidos, então o grafo é convertido para não dirigido
+e sem laços. Caminho médio e diâmetro exigem grafo conexo, por isso real e sintéticos
+são comparados na **maior componente conexa**. Cada modelo é sorteado várias vezes
+(semente fixa) e reportam-se média e desvio padrão. Parâmetros: ER com as mesmas
+arestas; BA com `round(m/n)` arestas por nó novo; WS com `k = 2·round(m/n)`.
+
+Métricas: grau médio e máximo, clustering, transitividade, caminho médio, diâmetro,
+assortatividade, distância KS entre as distribuições de grau e o índice small world
+σ = (C/C_ER)/(L/L_ER). Gráficos gerados: CCDF do grau (log-log), barras das métricas
+e o mapa C/C_ER × L/L_ER.
+
 ## Limitações
 
 - Tags `(any)` não são expandidas nem conectadas aos itens específicos que aceitam.
@@ -237,17 +261,19 @@ graph
 ├── read_recipes.py       Leitura, normalização e construção do grafo
 ├── plot_graph.py         Figura Plotly e interações no navegador
 ├── analytics.py          Fragilidade por recurso e comunidades (Louvain)
+├── compare_synthetic.py  Comparação com ER, BA e Watts-Strogatz
 ├── recipe\               Arquivos JSON de entrada
 ├── requirements.txt      Dependências
 ├── test_read_recipes.py  Testes do leitor e da deduplicação
 ├── test_analytics.py     Testes de fragilidade e comunidades
-└── test_plot_graph.py    Testes da página e da abertura única
+├── test_plot_graph.py    Testes da página e da abertura única
+└── test_compare_synthetic.py  Testes da comparação sintética
 ```
 
 ## Testes
 
 ```powershell
-python -m unittest -v test_read_recipes test_plot_graph test_analytics
+python -m unittest -v test_read_recipes test_plot_graph test_analytics test_compare_synthetic
 ```
 
 Os testes cobrem contagem de ingredientes, alternativas, métodos, deduplicação,
