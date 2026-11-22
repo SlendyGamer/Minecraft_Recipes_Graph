@@ -499,3 +499,230 @@ def communities_html(graph, result):
 def show_communities(graph, result):
     _serve_once(communities_html(graph, result).encode("utf-8"))
 # JsEnd
+
+
+def clustering_figure(graph):
+    """Distribui o coeficiente de clustering local calculado no grafo não dirigido."""
+    # O clustering mede a proporção de vizinhos de cada nó que também são vizinhos entre si.
+    # A conversão para grafo não dirigido deixa a métrica compatível com nx.clustering.
+    undirected = graph.to_undirected()
+    clustering = nx.clustering(undirected)
+
+    # Agrupa os coeficientes em intervalos de 0.1 para uma distribuição legível.
+    grouped = Counter(round(value, 1) for value in clustering.values())
+    coefficient_values = sorted(grouped)
+    frequencies = [grouped[value] for value in coefficient_values]
+
+    hover_nodes = []
+    for value in coefficient_values:
+        matching_nodes = [
+            node for node, coefficient in clustering.items()
+            if round(coefficient, 1) == value
+        ]
+        labels = [escape(node) for node in matching_nodes[:30]]
+        remaining = len(matching_nodes) - len(labels)
+        if remaining:
+            labels.append(f"... e mais {remaining} nós")
+        hover_nodes.append("<br>".join(labels))
+
+    figure = go.Figure(go.Bar(
+        x=coefficient_values,
+        y=frequencies,
+        customdata=hover_nodes,
+        name="Clustering local",
+        hovertemplate=(
+            "Clustering: %{x:.1f}<br>Número de nós: %{y}<br><br>"
+            "Nós:<br>%{customdata}<extra></extra>"
+        ),
+    ))
+
+    # Mostra 0.0 a 1.0, pois o coeficiente de clustering pertence a esse intervalo.
+    figure.update_layout(
+        title=f"Distribuição do clustering local: {undirected.number_of_nodes()} nós",
+        xaxis={"title": "Coeficiente de clustering", "range": [-0.02, 1.02]},
+        yaxis={"title": "Quantidade de nós"},
+        template="plotly_dark",
+        paper_bgcolor="#17212b",
+        plot_bgcolor="#17212b",
+        margin={"l": 15, "r": 15, "t": 60, "b": 15},
+    )
+    return figure
+
+
+# JsBegin
+def clustering_html(graph):
+    """Converte o gráfico de clustering em uma página HTML completa."""
+    return clustering_figure(graph).to_html(
+        full_html=True,
+        include_plotlyjs=True,
+        config={"scrollZoom": True, "displaylogo": False},
+    )
+
+
+def show_clustering(graph):
+    """Abre o gráfico de clustering em uma página local temporária."""
+    _serve_once(clustering_html(graph).encode("utf-8"))
+# JsEnd
+
+
+def pagerank_figure(graph, top=15):
+    """Cria barras horizontais com os nós de maior PageRank no grafo dirigido."""
+    from analytics import short_name
+
+    # PageRank usa a direção das arestas e distribui influência pelos vizinhos de saída.
+    pagerank = nx.pagerank(graph)
+
+    # Ordena em ordem decrescente e mantém apenas os maiores valores.
+    ranking = sorted(pagerank.items(), key=lambda item: item[1], reverse=True)[:top]
+    names = [short_name(node) for node, _ in ranking]
+    scores = [score for _, score in ranking]
+
+    figure = go.Figure(go.Bar(
+        x=scores,
+        y=names,
+        orientation="h",
+        marker={"color": "#4aa3df"},
+        customdata=[node for node, _ in ranking],
+        hovertemplate=(
+            "Nó: %{customdata}<br>PageRank: %{x:.6f}<extra></extra>"
+        ),
+    ))
+
+    figure.update_layout(
+        title=f"Top {top} nós por PageRank",
+        xaxis={"title": "PageRank"},
+        yaxis={"title": "Nó", "autorange": "reversed", "automargin": True},
+        template="plotly_dark",
+        paper_bgcolor="#17212b",
+        plot_bgcolor="#17212b",
+        margin={"l": 180, "r": 15, "t": 60, "b": 15},
+    )
+    return figure
+
+
+# JsBegin
+def pagerank_html(graph, top=15):
+    """Converte o ranking de PageRank em uma página HTML completa."""
+    return pagerank_figure(graph, top).to_html(
+        full_html=True,
+        include_plotlyjs=True,
+        config={"scrollZoom": True, "displaylogo": False},
+    )
+
+
+def show_pagerank(graph, top=15):
+    """Abre o gráfico de PageRank em uma página local temporária."""
+    _serve_once(pagerank_html(graph, top).encode("utf-8"))
+# JsEnd
+
+
+def degree_centrality(graph, log_log=False):
+    """Plota graus de entrada e saída; log_log ativa escalas logarítmicas."""
+    # Tags (any) fazem parte da rede.
+    nodes = list(graph.nodes)
+    analysis_graph = graph
+    node_count = len(nodes)
+
+    # Graus contam vizinhos distintos, não receitas; entrada são ingredientes conectados.
+    # Cada par (nó, grau) permite exibir os nomes no hover.
+    degree_sequences = {
+        "Grau de entrada:": [
+            (node, analysis_graph.in_degree(node)) for node in nodes
+        ],
+        "Grau de saída:": [
+            (node, analysis_graph.out_degree(node)) for node in nodes
+        ],
+    }
+
+    # Inicializa a figura Plotly; cada série representa uma direção do grau.
+    figure = go.Figure()
+
+    for name, node_degrees in degree_sequences.items():
+        # Agrupa os nós por grau para calcular a frequência de cada valor k.
+        nodes_by_degree = {}
+        for node, degree in node_degrees:
+            # Grau zero só é omitido no modo log, pois log(0) não é definido.
+            if not log_log or degree > 0:
+                nodes_by_degree.setdefault(degree, []).append(node)
+        # Counter registra quantos nós têm cada grau.
+        count = Counter({degree: len(items) for degree, items in nodes_by_degree.items()})
+        if not count:
+            # Sem graus positivos, não há pontos para a escala logarítmica.
+            continue
+        # Ordena graus e frequências para usá-los nos eixos X e Y.
+        degree_values, frequency = zip(*sorted(count.items()))
+        hover_nodes = []
+        for degree in degree_values:
+            matching_nodes = nodes_by_degree[degree]
+            # Limita o hover a 30 nomes e escapa caracteres especiais de HTML.
+            labels = [escape(node) for node in matching_nodes[:30]]
+            remaining = len(matching_nodes) - len(labels)
+            if remaining:
+                labels.append(f"... e mais {remaining} nós")
+            hover_nodes.append("<br>".join(labels))
+
+        # customdata e hovertemplate mostram grau, frequência e nomes ao passar o mouse.
+        hover_options = {
+            "customdata": hover_nodes,
+            "hovertemplate": (
+                "Grau: %{x}<br>Frequência: %{y}<br><br>" 
+                "Nós:<br>%{customdata}<extra>%{fullData.name}</extra>"
+            ),
+        }
+        # Barras mostram a distribuição; marcadores são usados na escala log-log.
+        if log_log:
+            figure.add_trace(go.Scatter(
+                x=degree_values,
+                y=frequency,
+                mode="markers",
+                name=name,
+                **hover_options,
+            ))
+        else:
+            figure.add_trace(go.Bar(
+                x=degree_values,
+                y=frequency,
+                name=name,
+                **hover_options,
+            ))
+
+    # A escala log-log ajuda a examinar a cauda, mas não prova uma lei de potência.
+    # update_layout define títulos, escalas, aparência e legenda.
+    figure.update_layout(
+        title=(
+            f"Distribuição de grau{' (log-log)' if log_log else ''}: "
+            f"{node_count} nós"
+        ),
+        xaxis={
+            "title": "Grau k" if not log_log else "Grau k (k > 0)",
+            "type": "log" if log_log else "linear",
+        },
+        yaxis={"title": "Frequência", "type": "log" if log_log else "linear"},
+        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
+        margin={"l": 15, "r": 15, "t": 60, "b": 15},
+        legend={"orientation": "h", "y": 1.04},
+        # Coloca as barras de entrada e saída lado a lado para cada grau.
+        barmode="group",
+    )
+
+    # Devolve a figura pronta; quem chamou a função decide se usa .show() ou a salva.
+    return figure
+
+
+# JsBegin
+def degree_centrality_html(graph, log_log=False):
+    """Converte a distribuição de grau em uma página HTML completa."""
+    # Reutiliza degree_centrality para manter uma única definição do gráfico.
+    # include_plotlyjs=True incorpora o Plotly e permite abrir sem CDN.
+    return degree_centrality(graph, log_log).to_html(
+        full_html=True,
+        include_plotlyjs=True,
+        config={"scrollZoom": True, "displaylogo": False},
+    )
+
+
+def show_degree_centrality(graph, log_log=False):
+    """Abre a distribuição de grau em uma página local temporária."""
+    # _serve_once entrega o HTML uma vez e encerra o servidor após a resposta.
+    _serve_once(degree_centrality_html(graph, log_log).encode("utf-8"))
+# JsEnd
