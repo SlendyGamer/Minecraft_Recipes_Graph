@@ -170,7 +170,39 @@ def main():
         action="store_true",
         help="Detect item families (Louvain) and the items that bridge them.",
     )
+    parser.add_argument(
+        "--all-graphs",
+        action="store_true",
+        help="Open the graph and all available metric charts in separate pages.",
+    )
+    parser.add_argument(
+        "--degree",
+        action="store_true",
+        help="Open the linear degree distribution.",
+    )
+    parser.add_argument(
+        "--degree-log",
+        action="store_true",
+        help="Open the log-log degree distribution.",
+    )
+    parser.add_argument(
+        "--clustering",
+        action="store_true",
+        help="Open the clustering distribution.",
+    )
+    parser.add_argument(
+        "--pagerank",
+        action="store_true",
+        help="Open the PageRank ranking.",
+    )
     args = parser.parse_args()
+    if args.all_graphs:
+        args.fragility = True
+        args.communities = True
+        args.degree = True
+        args.degree_log = True
+        args.clustering = True
+        args.pagerank = True
     graph = build_graph(args.recipe_directory)
     print(f"Nodes: {graph.number_of_nodes()}")
     print(f"Edges: {graph.number_of_edges()}")
@@ -214,11 +246,42 @@ def main():
 
             show_communities(graph, result)
     if not args.no_plot:
-        # JsBegin
-        from plot_graph import show_once
+        has_metric_option = any((
+            args.fragility,
+            args.communities,
+            args.degree,
+            args.degree_log,
+            args.clustering,
+            args.pagerank,
+        ))
+        if not has_metric_option:
+            # JsBegin
+            from plot_graph import show_once
 
-        show_once(graph)
-        # JsEnd
+            show_once(graph)
+            # JsEnd
+        elif args.all_graphs:
+            # JsBegin
+            from plot_graph import show_once
+
+            show_once(graph)
+            # JsEnd
+    if args.degree and not args.no_plot:
+        from plot_graph import show_degree_centrality
+
+        show_degree_centrality(graph)
+    if args.degree_log and not args.no_plot:
+        from plot_graph import show_degree_centrality
+
+        show_degree_centrality(graph, log_log=True)
+    if args.clustering and not args.no_plot:
+        from plot_graph import show_clustering
+
+        show_clustering(graph)
+    if args.pagerank and not args.no_plot:
+        from plot_graph import show_pagerank
+
+        show_pagerank(graph)
 
 
 if __name__ == "__main__":

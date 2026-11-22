@@ -58,6 +58,26 @@ Usar outra pasta de receitas:
 python .\read_recipes.py "C:\dados\minecraft\recipe" --no-plot
 ```
 
+Abrir todos os gráficos em páginas separadas:
+
+```powershell
+python .\read_recipes.py --all-graphs
+```
+
+Abrir uma análise específica:
+
+```powershell
+python .\read_recipes.py --degree       # distribuição linear de graus
+python .\read_recipes.py --degree-log   # distribuição log-log de graus
+python .\read_recipes.py --clustering   # distribuição do clustering
+python .\read_recipes.py --pagerank     # ranking dos principais nós
+python .\read_recipes.py --fragility    # impacto da ausência de recursos
+python .\read_recipes.py --communities  # comunidades e itens-ponte
+```
+
+Adicionar `--no-plot` quando as análises devem ser feitas apenas no terminal,
+por exemplo `python .\read_recipes.py --all-graphs --no-plot`.
+
 O terminal informa o número de nós, arestas, arquivos de receitas carregados,
 variantes e receitas ignoradas. Cada entrada ignorada é listada com seu motivo.
 
@@ -169,6 +189,40 @@ print(most_used[:10])
 O grau de saída conta **produtos distintos**, não o número de receitas. Já o
 grau de entrada inclui todos os ingredientes possíveis, inclusive alternativas:
 não significa que todos sejam obrigatórios simultaneamente.
+
+## Distribuição de grau, clustering e PageRank
+
+### Distribuição de grau
+
+O gráfico linear mostra quantos nós possuem cada grau de entrada ou saída.
+O gráfico log-log conserva apenas graus maiores que zero e ajuda a examinar a
+cauda da distribuição. Uma aparência aproximada de reta é apenas uma pista; ela
+não prova por si só que o grafo seja livre de escala.
+
+### Clustering local
+
+O clustering local mede quanto os vizinhos de um nó estão conectados entre si.
+Como o grafo é dirigido, ele é calculado na projeção não dirigida. Um coeficiente
+próximo de 1 indica uma vizinhança bastante fechada, enquanto 0 indica que os
+vizinhos não formam arestas entre si. O gráfico compara a quantidade de nós em
+cada faixa do coeficiente.
+
+### PageRank
+
+O PageRank mede influência estrutural no grafo dirigido. Ao longo das arestas
+`ingrediente → produto`, um nó recebe influência dos itens que apontam para ele
+e de nós apontadores que já têm importância própria.
+
+PageRank não é apenas o número de entradas. Ele responde quais nós ocupam posições
+mais influentes no fluxo do grafo e pode ser usado para ranquear os vértices mais
+importantes. O gráfico apresenta os maiores valores em barras horizontais.
+
+```powershell
+python .\read_recipes.py --degree
+python .\read_recipes.py --degree-log
+python .\read_recipes.py --clustering
+python .\read_recipes.py --pagerank
+```
 
 ## Análise de fragilidade por recurso
 
