@@ -341,3 +341,14 @@ def navigation_report(graph, pairs=1000, seed=1):
         "mean_shortest": sum(shortest_taken) / reached if reached else None,
         "stretch": sum(stretch) / reached if reached else None,
     }
+
+
+def distance_distribution(graph):
+    """Número de pares de itens a cada distância (caminho mínimo) no maior componente."""
+    component = largest_component(graph)
+    pairs = defaultdict(int)
+    for source, lengths in nx.all_pairs_shortest_path_length(component):
+        for target, length in lengths.items():
+            if source < target:
+                pairs[length] += 1
+    return dict(sorted(pairs.items()))

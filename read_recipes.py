@@ -205,6 +205,11 @@ def main():
         action="store_true",
         help="Answer diffusion, preservation, robustness and navigation questions.",
     )
+    parser.add_argument(
+        "--distance",
+        action="store_true",
+        help="Open the distribution of shortest-path distances.",
+    )
     args = parser.parse_args()
     if args.all_graphs:
         args.fragility = True
@@ -213,6 +218,7 @@ def main():
         args.degree_log = True
         args.clustering = True
         args.pagerank = True
+        args.distance = True
     graph = build_graph(args.recipe_directory)
     print(f"Nodes: {graph.number_of_nodes()}")
     print(f"Edges: {graph.number_of_edges()}")
@@ -353,6 +359,7 @@ def main():
             args.pagerank,
             args.centrality,
             args.questions,
+            args.distance,
         ))
         if not has_metric_option:
             # JsBegin
@@ -378,6 +385,10 @@ def main():
         from plot_graph import show_clustering
 
         show_clustering(graph)
+    if args.distance and not args.no_plot:
+        from plot_graph import show_distance
+
+        show_distance(graph)
     if args.pagerank and not args.no_plot:
         from plot_graph import show_pagerank
 

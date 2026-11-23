@@ -70,6 +70,7 @@ Abrir uma análise específica:
 python .\read_recipes.py --degree       # distribuição linear de graus
 python .\read_recipes.py --degree-log   # distribuição log-log de graus
 python .\read_recipes.py --clustering   # distribuição do clustering
+python .\read_recipes.py --distance     # distribuição das distâncias (caminho mínimo)
 python .\read_recipes.py --pagerank     # ranking dos principais nós
 python .\read_recipes.py --fragility    # impacto da ausência de recursos
 python .\read_recipes.py --communities  # comunidades e itens-ponte
@@ -208,6 +209,13 @@ Como o grafo é dirigido, ele é calculado na projeção não dirigida. Um coefi
 próximo de 1 indica uma vizinhança bastante fechada, enquanto 0 indica que os
 vizinhos não formam arestas entre si. O gráfico compara a quantidade de nós em
 cada faixa do coeficiente.
+
+### Distância (caminho mínimo)
+
+O gráfico mostra quantos pares de itens ficam a cada distância no maior componente
+(938 nós, 439.453 pares). A linha tracejada marca o caminho médio. O pico em 6 passos
+(20,7% dos pares) e a cauda curta indicam que a rede é pequena para o seu tamanho;
+em uma cadeia a curva seria larga e achatada.
 
 ### PageRank
 
@@ -447,6 +455,41 @@ vizinho ainda não visitado de maior grau, sem retrocesso), **17,1%** dos 1000 p
 sorteados chegam ao destino. Nos que chegam, são 15,2 passos em média contra 4,4 do
 caminho mínimo (alongamento de **3,13x**). O caminho curto existe, mas achá-lo exige
 conhecer o grafo; ir sempre ao maior grau leva a becos sem saída.
+
+## Classificação: livre de escala, small world ou aleatório?
+
+**Resposta: small world com uma cauda de hubs. Não é aleatório, e a evidência para livre de escala é parcial.**
+
+Números do maior componente (938 nós), de `python .\compare_synthetic.py`, com 20 sorteios por modelo:
+
+| Métrica | Real | ER (aleatório) | BA (livre de escala) | WS (small world) |
+|---|---|---|---|---|
+| Clustering médio | 0,153 | 0,004 | 0,031 | 0,375 |
+| Caminho médio | 6,00 | 5,12 | 4,03 | 8,71 |
+| Diâmetro | 17 | 11,2 | 7 | 17,2 |
+| Grau máximo | 96 | 12,0 | 101,2 | 6,8 |
+| Assortatividade | −0,129 | 0,001 | −0,095 | −0,023 |
+| Distância KS do grau | – | 0,365 | 0,304 | 0,625 |
+
+**Não é aleatório.** O clustering real é 34,5 vezes o de um grafo ER do mesmo tamanho,
+e o grau máximo não cabe no ER (96 contra 12). Itens como `stick` não surgem por acaso.
+
+**É small world.** O caminho médio real (6,00) é só 1,17 vezes o do ER, enquanto o
+clustering é 34,5 vezes maior. O índice σ = (C/C_ER)/(L/L_ER) é 46,4, bem acima de 1.
+Dois itens quaisquer ficam a cerca de 6 passos (`ln N = 6,84`, de `--questions`) com
+grau médio de apenas 3,9. Ressalva: o WS, o modelo clássico de small world, tem
+clustering maior (0,375) e caminho médio maior (8,71); o grafo real fica entre o ER e o WS.
+
+**A cauda tem hubs, mas não é livre de escala puro.** O grau máximo (96) coincide com o
+do BA (101), e a assortatividade negativa (−0,13) também lembra o BA: os hubs se ligam
+a itens de grau baixo. Mas o BA não reproduz o clustering real (0,031 contra 0,153) nem
+o caminho médio (4,03 contra 6,00), e a distância KS do grau é 0,30 para o BA, longe de
+zero. O gráfico log-log do grau (`--degree-log`) tem aparência de cauda longa, mas isso
+não prova uma lei de potência.
+
+**Origem da forma.** Os hubs correspondem aos itens do top 3 (`stick`, `planks(any)`,
+`iron_ingot`). O clustering alto vem das famílias de itens quase idênticas (cores de
+lã, cama e tapete) que as comunidades de `--communities` mostram como grupos densos.
 
 ## Limitações
 

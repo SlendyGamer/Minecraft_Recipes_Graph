@@ -353,6 +353,41 @@ def show_centrality(result):
     _serve_once(html.encode("utf-8"))
 
 
+def distance_figure(graph):
+    """Barras: quantos pares de itens ficam a cada distância (maior componente)."""
+    from analytics import distance_distribution
+
+    pairs = distance_distribution(graph)
+    total = sum(pairs.values())
+    mean = sum(distance * count for distance, count in pairs.items()) / total
+    figure = go.Figure(go.Bar(
+        x=list(pairs), y=list(pairs.values()), marker={"color": "#4aa3df"},
+        customdata=[100 * count / total for count in pairs.values()],
+        hovertemplate=(
+            "Distância: %{x}<br>Pares: %{y}<br>%{customdata:.1f}% dos pares<extra></extra>"
+        ),
+    ))
+    figure.add_vline(
+        x=mean, line={"color": "#f2b84b", "dash": "dash"},
+        annotation_text=f"média L = {mean:.2f}", annotation_font_color="#f2b84b",
+    )
+    figure.update_layout(
+        title=f"Distribuição das distâncias: {total} pares de itens",
+        xaxis={"title": "Distância (caminho mínimo)", "dtick": 1},
+        yaxis={"title": "Pares de itens"},
+        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
+        margin={"l": 15, "r": 15, "t": 60, "b": 40},
+    )
+    return figure
+
+
+def show_distance(graph):
+    html = distance_figure(graph).to_html(
+        full_html=True, include_plotlyjs=True, config={"displaylogo": False},
+    )
+    _serve_once(html.encode("utf-8"))
+
+
 def robustness_figure(result):
     """Linhas: maior componente restante ao remover nós aleatórios × hubs."""
     percent = [100 * value for value in result["fractions"]]
