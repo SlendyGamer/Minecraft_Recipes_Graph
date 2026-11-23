@@ -490,6 +490,38 @@ def show_centrality(result):
     _serve_once(html.encode("utf-8"))
 
 
+def robustness_figure(result):
+    """Linhas: maior componente restante ao remover nós aleatórios × hubs."""
+    percent = [100 * value for value in result["fractions"]]
+    figure = go.Figure()
+    for key, name, color in (
+        ("random", "Aleatória (média)", "#4aa3df"),
+        ("targeted", "Hubs (maior grau primeiro)", "#f2b84b"),
+    ):
+        figure.add_trace(go.Scatter(
+            x=percent, y=[100 * value for value in result[key]],
+            mode="lines+markers", name=name, line={"color": color},
+            hovertemplate="%{x:.1f}% removido: %{y:.1f}% conectado<extra>%{fullData.name}</extra>",
+        ))
+    figure.add_hline(y=50, line={"color": "#8194a5", "dash": "dot"})
+    figure.update_layout(
+        title="Robustez: maior componente restante após remover nós",
+        xaxis={"title": "Nós removidos (%)"},
+        yaxis={"title": "Maior componente restante (%)", "range": [0, 102]},
+        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
+        margin={"l": 15, "r": 15, "t": 60, "b": 40},
+        legend={"orientation": "h", "y": 1.04},
+    )
+    return figure
+
+
+def show_robustness(result):
+    html = robustness_figure(result).to_html(
+        full_html=True, include_plotlyjs=True, config={"displaylogo": False},
+    )
+    _serve_once(html.encode("utf-8"))
+
+
 def communities_figure(graph, result, top=12, bridges=10):
     """Rede colorida por comunidade; as `top` maiores têm cor própria e as demais são agrupadas."""
     from analytics import analysis_graph

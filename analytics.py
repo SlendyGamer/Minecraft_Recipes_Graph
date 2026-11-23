@@ -1,6 +1,8 @@
 from collections import defaultdict
 
 import networkx as nx
+import math
+import random
 
 
 def is_tag(node):
@@ -219,4 +221,123 @@ def centrality_report(graph, top=15, candidates=None, candidate_count=6):
         "betweenness": ranking(betweenness),
         "closeness": ranking(closeness),
         "profile": profile,
+    }
+    
+    
+def largest_component(graph):
+    """Maior componente do grafo não dirigido, sem laços e sem placeholders."""
+    undirected = analysis_graph(graph)
+    return undirected.subgraph(max(nx.connected_components(undirected), key=len)).copy()
+
+
+def diffusion_report(graph):
+    """Caminho médio e diâmetro: quão curtas são as rotas entre quaisquer dois itens."""
+    component = largest_component(graph)
+    nodes = component.number_of_nodes()
+    return {
+        "nodes": nodes,
+        "average_path": nx.average_shortest_path_length(component),
+        "diameter": nx.diameter(component),
+        "mean_degree": 2 * component.number_of_edges() / nodes,
+        "log_nodes": math.log(nodes),
+    }
+
+
+def preservation_report(graph):
+    """Redundância de receitas e k-core.
+
+    Uma alternativa é um conjunto de ingredientes diferente para o mesmo item;
+    trocar só a estação (forno × alto-forno) não conta como redundância.
+    """
+    by_output = defaultdict(set)
+    for _, ingredients, output in extract_recipes(graph):
+        by_output[output].add(ingredients)
+    cores = nx.core_number(largest_component(graph))
+    max_core = max(cores.values())
+    return {
+        "crafted_items": len(by_output),
+        "with_alternative": sum(1 for options in by_output.values() if len(options) > 1),
+        "max_core": max_core,
+        "core_nodes": sorted(node for node, value in cores.items() if value == max_core),
+    }
+
+
+def robustness_report(graph, max_fraction=0.5, steps=25, runs=20, seed=1):
+    """Fração do maior componente restante ao remover nós aleatórios × hubs.
+
+    A fração é relativa aos nós que sobraram. Hubs são removidos por grau inicial.
+    O limiar é a primeira fração removida em que o componente cai abaixo de 50%.
+    """
+    component = largest_component(graph)
+    total = component.number_of_nodes()
+    rng = random.Random(seed)
+    nodes = sorted(component)
+    by_degree = sorted(nodes, key=lambda node: (-component.degree(node), node))
+    counts = [round(total * max_fraction * step / steps) for step in range(steps + 1)]
+
+    def connected(removed):
+        removed = set(removed)
+        rest = component.subgraph(node for node in nodes if node not in removed)
+        if not rest:
+            return 0.0
+        return max(len(part) for part in nx.connected_components(rest)) / rest.number_of_nodes()
+
+    random_runs = []
+    for _ in range(runs):
+        order = nodes[:]
+        rng.shuffle(order)
+        random_runs.append([connected(order[:count]) for count in counts])
+    random_curve = [sum(values) / runs for values in zip(*random_runs)]
+    targeted_curve = [connected(by_degree[:count]) for count in counts]
+    fractions = [count / total for count in counts]
+
+    def threshold(curve):
+        return next((f for f, value in zip(fractions, curve) if value < 0.5), None)
+
+    return {
+        "fractions": fractions,
+        "random": random_curve,
+        "targeted": targeted_curve,
+        "threshold_random": threshold(random_curve),
+        "threshold_targeted": threshold(targeted_curve),
+    }
+
+
+def navigation_report(graph, pairs=1000, seed=1):
+    """Busca gulosa por grau, só com informação local, contra o caminho mínimo.
+
+    De cada nó, vai ao vizinho ainda não visitado de maior grau; se o destino é
+    vizinho, vai direto. Sem retrocesso: fica preso se todos os vizinhos já foram
+    visitados. O alongamento (stretch) é a média de passos ÷ caminho mínimo.
+    """
+    component = largest_component(graph)
+    rng = random.Random(seed)
+    nodes = sorted(component)
+    steps_taken, shortest_taken, stretch = [], [], []
+    for _ in range(pairs):
+        source, target = rng.sample(nodes, 2)
+        current, visited, steps = source, {source}, 0
+        while current != target:
+            neighbors = component[current]
+            if target in neighbors:
+                current = target
+            else:
+                options = [node for node in neighbors if node not in visited]
+                if not options:
+                    break
+                current = max(options, key=lambda node: (component.degree(node), node))
+            visited.add(current)
+            steps += 1
+        if current == target:
+            shortest = nx.shortest_path_length(component, source, target)
+            steps_taken.append(steps)
+            shortest_taken.append(shortest)
+            stretch.append(steps / shortest)
+    reached = len(steps_taken)
+    return {
+        "pairs": pairs,
+        "success_rate": reached / pairs,
+        "mean_steps": sum(steps_taken) / reached if reached else None,
+        "mean_shortest": sum(shortest_taken) / reached if reached else None,
+        "stretch": sum(stretch) / reached if reached else None,
     }

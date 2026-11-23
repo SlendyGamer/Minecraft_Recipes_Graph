@@ -180,6 +180,11 @@ def main():
         action="store_true",
         help="Rank items by betweenness and closeness in the largest component.",
     )
+    parser.add_argument(
+        "--questions",
+        action="store_true",
+        help="Answer diffusion, preservation, robustness and navigation questions.",
+    )
     args = parser.parse_args()
     graph = build_graph(args.recipe_directory)
     print(f"Nodes: {graph.number_of_nodes()}")
@@ -268,6 +273,53 @@ def main():
             from plot_graph import show_centrality
 
             show_centrality(result)
+    if args.questions:
+        from analytics import (
+            diffusion_report, navigation_report, preservation_report,
+            robustness_report, short_name,
+        )
+
+        diffusion = diffusion_report(graph)
+        print("Difusão (maior componente):")
+        print(f"  Nós: {diffusion['nodes']}; grau médio: {diffusion['mean_degree']:.2f}")
+        print(
+            f"  Caminho médio L: {diffusion['average_path']:.2f} "
+            f"(ln N = {diffusion['log_nodes']:.2f}); diâmetro: {diffusion['diameter']}"
+        )
+        preservation = preservation_report(graph)
+        share = 100 * preservation["with_alternative"] / preservation["crafted_items"]
+        core = [short_name(node) for node in preservation["core_nodes"]]
+        print("Preservação:")
+        print(
+            f"  Itens com receita alternativa: {preservation['with_alternative']} "
+            f"de {preservation['crafted_items']} ({share:.1f}%)"
+        )
+        print(
+            f"  k-core máximo: {preservation['max_core']} "
+            f"({len(core)} nós: {', '.join(core[:8])}, ...)"
+        )
+        robustness = robustness_report(graph)
+        print("Robustez (maior componente cai abaixo de 50%):")
+        for key, title in (("threshold_random", "aleatória"), ("threshold_targeted", "hubs")):
+            value = robustness[key]
+            result_text = "não cai até 50% removido" if value is None else f"{100 * value:.1f}% removido"
+            print(f"  Remoção {title}: {result_text}")
+        navigation = navigation_report(graph)
+        print("Navegação (busca gulosa por grau):")
+        print(
+            f"  Chega ao destino: {100 * navigation['success_rate']:.1f}% "
+            f"de {navigation['pairs']} pares"
+        )
+        if navigation["stretch"] is not None:
+            print(
+                f"  Passos médios: {navigation['mean_steps']:.1f} contra "
+                f"{navigation['mean_shortest']:.1f} do caminho mínimo "
+                f"(alongamento {navigation['stretch']:.2f}x)"
+            )
+        if not args.no_plot:
+            from plot_graph import show_robustness
+
+            show_robustness(robustness)
     if not args.no_plot:
         # JsBegin
         from plot_graph import show_once
