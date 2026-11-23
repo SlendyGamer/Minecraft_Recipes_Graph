@@ -73,6 +73,8 @@ python .\read_recipes.py --clustering   # distribuição do clustering
 python .\read_recipes.py --pagerank     # ranking dos principais nós
 python .\read_recipes.py --fragility    # impacto da ausência de recursos
 python .\read_recipes.py --communities  # comunidades e itens-ponte
+python .\read_recipes.py --centrality   # betweenness e closeness
+python .\read_recipes.py --questions    # difusão, preservação, robustez e navegação
 ```
 
 Adicionar `--no-plot` quando as análises devem ser feitas apenas no terminal,
@@ -215,7 +217,8 @@ e de nós apontadores que já têm importância própria.
 
 PageRank não é apenas o número de entradas. Ele responde quais nós ocupam posições
 mais influentes no fluxo do grafo e pode ser usado para ranquear os vértices mais
-importantes. O gráfico apresenta os maiores valores em barras horizontais.
+importantes. O gráfico apresenta os maiores valores em barras horizontais, nos dois
+sentidos das arestas (normal e reverso, detalhados na seção "PageRank nos dois sentidos").
 
 ```powershell
 python .\read_recipes.py --degree
@@ -305,6 +308,8 @@ cadeias de receitas?*
 python .\read_recipes.py --pagerank          # imprime os rankings e abre o gráfico
 python .\read_recipes.py --pagerank --no-plot
 ```
+
+O gráfico mostra, lado a lado, os maiores valores do PageRank normal e do reverso.
 
 O PageRank (α = 0,85) é calculado duas vezes, sobre as arestas `ingrediente → produto`:
 
@@ -410,6 +415,39 @@ de conversão bruto ⇄ bloco, por isso não entram no top 3. A betweenness diri
 muito baixa em um grafo quase acíclico, destaca conversões curtas (corantes e nuggets)
 e também não foi usada.
 
+## Perguntas finais
+
+```powershell
+python .\read_recipes.py --questions            # imprime as respostas e abre o gráfico de robustez
+python .\read_recipes.py --questions --no-plot
+```
+
+Todas as medidas usam o maior componente do grafo não dirigido (938 nós, o mesmo
+`analysis_graph`). Os sorteios usam semente fixa (1), então o resultado se repete.
+
+**Robustez: alta contra falhas aleatórias, baixa contra ataques a hubs.** Removendo nós
+e acompanhando o maior componente restante, o grafo só cai abaixo de 50% depois de
+**45,9%** dos nós sorteados serem removidos (média de 20 execuções). Removendo os hubs
+(maior grau primeiro), isso acontece com apenas **8,0%** (com 10% removido, o componente
+tem 28,2% dos nós restantes contra 90,7% no caso aleatório). A rede suporta falhas
+aleatórias, mas depende de poucos nós, como `stick` e `planks(any)`.
+
+**Difusão: fácil.** O caminho médio é **L = 6,00** com diâmetro 17 e grau médio 3,92.
+Como `ln N = 6,84`, L fica abaixo de `ln N`, então qualquer item alcança outro em cerca
+de 6 passos. A informação se espalha rápido, mas passa pelos hubs (SIR não foi simulado).
+
+**Preservação: moderada.** Só **22,9%** dos itens fabricáveis (192 de 837) têm receita
+alternativa, contando como alternativa apenas um conjunto de ingredientes diferente; trocar
+a estação (forno × alto-forno) não conta. O **k-core máximo é 16** (49 nós), mas é um
+artefato: reúne as 16 cores de lã, cama e tapete (que compartilham os mesmos corantes) e
+`planks(any)`. Não indica redundância real do restante do grafo.
+
+**Navegação: difícil só com informação local.** Na busca gulosa por grau (vai ao
+vizinho ainda não visitado de maior grau, sem retrocesso), **17,1%** dos 1000 pares
+sorteados chegam ao destino. Nos que chegam, são 15,2 passos em média contra 4,4 do
+caminho mínimo (alongamento de **3,13x**). O caminho curto existe, mas achá-lo exige
+conhecer o grafo; ir sempre ao maior grau leva a becos sem saída.
+
 ## Limitações
 
 - Tags `(any)` não são expandidas nem conectadas aos itens específicos que aceitam.
@@ -428,22 +466,9 @@ e também não foi usada.
 graph
 ├── read_recipes.py       Leitura, normalização e construção do grafo
 ├── plot_graph.py         Figura Plotly e interações no navegador
-├── analytics.py          Fragilidade, comunidades (Louvain), PageRank e centralidade
+├── analytics.py          Fragilidade, comunidades (Louvain), PageRank, centralidade e perguntas finais
 ├── compare_synthetic.py  Comparação com ER, BA e Watts-Strogatz
+├── figures_synthetic\    Gráficos e CSV gerados pela comparação sintética
 ├── recipe\               Arquivos JSON de entrada
-├── requirements.txt      Dependências
-├── test_read_recipes.py  Testes do leitor e da deduplicação
-├── test_analytics.py     Testes de fragilidade, comunidades, PageRank e centralidade
-├── test_plot_graph.py    Testes da página e da abertura única
-└── test_compare_synthetic.py  Testes da comparação sintética
+└── requirements.txt      Dependências
 ```
-
-## Testes
-
-```powershell
-python -m unittest -v test_read_recipes test_plot_graph test_analytics test_compare_synthetic
-```
-
-Os testes cobrem contagem de ingredientes, alternativas, métodos, deduplicação,
-geração da página interativa, entrega por servidor de requisição única, fragilidade,
-comunidades, PageRank e centralidade.

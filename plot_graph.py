@@ -2,7 +2,7 @@ from html import escape
 from math import atan2, cos, pi, sin
 from collections import Counter
 
-from analytics import short_name
+from analytics import pagerank_rankings, short_name
 
 
 import networkx as nx
@@ -228,99 +228,6 @@ def _serve_once(content):
         server.handle_request()
 
 
-def degree_centrality(graph, log_log=False):
-    """Plota graus de entrada e saída; log_log ativa escalas logarítmicas."""
-    # Tags (any) fazem parte da rede.
-    nodes = list(graph.nodes)
-    analysis_graph = graph
-    node_count = len(nodes)
-
-    # Graus contam vizinhos distintos, não receitas; entrada são ingredientes conectados.
-    # Cada par (nó, grau) permite exibir os nomes no hover.
-    degree_sequences = {
-        "Grau de entrada:": [
-            (node, analysis_graph.in_degree(node)) for node in nodes
-        ],
-        "Grau de saída:": [
-            (node, analysis_graph.out_degree(node)) for node in nodes
-        ],
-    }
-
-    # Inicializa a figura Plotly; cada série representa uma direção do grau.
-    figure = go.Figure()
-
-    for name, node_degrees in degree_sequences.items():
-        # Agrupa os nós por grau para calcular a frequência de cada valor k.
-        nodes_by_degree = {}
-        for node, degree in node_degrees:
-            # Grau zero só é omitido no modo log, pois log(0) não é definido.
-            if not log_log or degree > 0:
-                nodes_by_degree.setdefault(degree, []).append(node)
-        # Counter registra quantos nós têm cada grau.
-        count = Counter({degree: len(items) for degree, items in nodes_by_degree.items()})
-        if not count:
-            # Sem graus positivos, não há pontos para a escala logarítmica.
-            continue
-        # Ordena graus e frequências para usá-los nos eixos X e Y.
-        degree_values, frequency = zip(*sorted(count.items()))
-        hover_nodes = []
-        for degree in degree_values:
-            matching_nodes = nodes_by_degree[degree]
-            # Limita o hover a 30 nomes e escapa caracteres especiais de HTML.
-            labels = [escape(node) for node in matching_nodes[:30]]
-            remaining = len(matching_nodes) - len(labels)
-            if remaining:
-                labels.append(f"... e mais {remaining} nós")
-            hover_nodes.append("<br>".join(labels))
-
-        # customdata e hovertemplate mostram grau, frequência e nomes ao passar o mouse.
-        hover_options = {
-            "customdata": hover_nodes,
-            "hovertemplate": (
-                "Grau: %{x}<br>Frequência: %{y}<br><br>" 
-                "Nós:<br>%{customdata}<extra>%{fullData.name}</extra>"
-            ),
-        }
-        # Barras mostram a distribuição; marcadores são usados na escala log-log.
-        if log_log:
-            figure.add_trace(go.Scatter(
-                x=degree_values,
-                y=frequency,
-                mode="markers",
-                name=name,
-                **hover_options,
-            ))
-        else:
-            figure.add_trace(go.Bar(
-                x=degree_values,
-                y=frequency,
-                name=name,
-                **hover_options,
-            ))
-
-    # A escala log-log ajuda a examinar a cauda, mas não prova uma lei de potência.
-    # update_layout define títulos, escalas, aparência e legenda.
-    figure.update_layout(
-        title=(
-            f"Distribuição de grau{' (log-log)' if log_log else ''}: "
-            f"{node_count} nós"
-        ),
-        xaxis={
-            "title": "Grau k" if not log_log else "Grau k (k > 0)",
-            "type": "log" if log_log else "linear",
-        },
-        yaxis={"title": "Frequência", "type": "log" if log_log else "linear"},
-        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
-        margin={"l": 15, "r": 15, "t": 60, "b": 15},
-        legend={"orientation": "h", "y": 1.04},
-        # Coloca as barras de entrada e saída lado a lado para cada grau.
-        barmode="group",
-    )
-
-    # Devolve a figura pronta; quem chamou a função decide se usa .show() ou a salva.
-    return figure
-
-
 def fragility_figure(result, top=25):
     """Barras horizontais: itens que deixam de ser fabricáveis sem cada recurso base."""
     rows = list(reversed(result["by_resource"][:top]))
@@ -404,50 +311,6 @@ def show_fragility(result, top=25):
     _serve_once(fragility_html(result, top).encode("utf-8"))
 
 
-def pagerank_figure(result):
-    """Barras horizontais lado a lado: PageRank normal e reverso."""
-    from plotly.subplots import make_subplots
-
-    figure = make_subplots(
-        rows=1, cols=2, horizontal_spacing=0.2,
-        subplot_titles=(
-            "Normal (ingrediente → produto)",
-            "Reverso (produto → ingrediente)",
-        ),
-    )
-    for column, (key, color) in enumerate(
-        (("normal", "#f2b84b"), ("reverse", "#4aa3df")), start=1
-    ):
-        rows = list(reversed(result[key]))
-        figure.add_trace(go.Bar(
-            x=[row["score"] for row in rows],
-            y=[short_name(row["name"]) for row in rows],
-            orientation="h", marker={"color": color},
-            customdata=[[row["in_degree"], row["out_degree"]] for row in rows],
-            hovertemplate=(
-                "%{y}<br>PageRank: %{x:.5f}"
-                "<br>Grau de entrada: %{customdata[0]}"
-                "<br>Grau de saída: %{customdata[1]}<extra></extra>"
-            ),
-        ), row=1, col=column)
-    figure.update_xaxes(title_text="PageRank")
-    figure.update_yaxes(dtick=1, automargin=True)
-    figure.update_layout(
-        title="PageRank nos dois sentidos das receitas", showlegend=False,
-        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
-        margin={"l": 15, "r": 15, "t": 80, "b": 40},
-    )
-    return figure
-
-
-def show_pagerank(result):
-    html = pagerank_figure(result).to_html(
-        full_html=True, include_plotlyjs=True, config={"displaylogo": False},
-    )
-    _serve_once(html.encode("utf-8"))
-
-
-
 def centrality_figure(result):
     """Barras horizontais lado a lado: betweenness e closeness no maior componente."""
     from plotly.subplots import make_subplots
@@ -485,6 +348,38 @@ def centrality_figure(result):
 
 def show_centrality(result):
     html = centrality_figure(result).to_html(
+        full_html=True, include_plotlyjs=True, config={"displaylogo": False},
+    )
+    _serve_once(html.encode("utf-8"))
+
+
+def robustness_figure(result):
+    """Linhas: maior componente restante ao remover nós aleatórios × hubs."""
+    percent = [100 * value for value in result["fractions"]]
+    figure = go.Figure()
+    for key, name, color in (
+        ("random", "Aleatória (média)", "#4aa3df"),
+        ("targeted", "Hubs (maior grau primeiro)", "#f2b84b"),
+    ):
+        figure.add_trace(go.Scatter(
+            x=percent, y=[100 * value for value in result[key]],
+            mode="lines+markers", name=name, line={"color": color},
+            hovertemplate="%{x:.1f}% removido: %{y:.1f}% conectado<extra>%{fullData.name}</extra>",
+        ))
+    figure.add_hline(y=50, line={"color": "#8194a5", "dash": "dot"})
+    figure.update_layout(
+        title="Robustez: maior componente restante após remover nós",
+        xaxis={"title": "Nós removidos (%)"},
+        yaxis={"title": "Maior componente restante (%)", "range": [0, 102]},
+        template="plotly_dark", paper_bgcolor="#17212b", plot_bgcolor="#17212b",
+        margin={"l": 15, "r": 15, "t": 60, "b": 40},
+        legend={"orientation": "h", "y": 1.04},
+    )
+    return figure
+
+
+def show_robustness(result):
+    html = robustness_figure(result).to_html(
         full_html=True, include_plotlyjs=True, config={"displaylogo": False},
     )
     _serve_once(html.encode("utf-8"))
@@ -652,36 +547,47 @@ def show_clustering(graph):
 
 
 def pagerank_figure(graph, top=15):
-    """Cria barras horizontais com os nós de maior PageRank no grafo dirigido."""
-    from analytics import short_name
+    """Cria barras horizontais com os nós de maior PageRank, no sentido normal e no reverso."""
+    from plotly.subplots import make_subplots
 
-    # PageRank usa a direção das arestas e distribui influência pelos vizinhos de saída.
-    pagerank = nx.pagerank(graph)
+    # Normal: ingrediente → produto. Reverso: produto → ingrediente (recursos dos quais muitos itens dependem).
+    rankings = pagerank_rankings(graph, top)
 
-    # Ordena em ordem decrescente e mantém apenas os maiores valores.
-    ranking = sorted(pagerank.items(), key=lambda item: item[1], reverse=True)[:top]
-    names = [short_name(node) for node, _ in ranking]
-    scores = [score for _, score in ranking]
-
-    figure = go.Figure(go.Bar(
-        x=scores,
-        y=names,
-        orientation="h",
-        marker={"color": "#4aa3df"},
-        customdata=[node for node, _ in ranking],
-        hovertemplate=(
-            "Nó: %{customdata}<br>PageRank: %{x:.6f}<extra></extra>"
+    figure = make_subplots(
+        rows=1, cols=2, horizontal_spacing=0.2,
+        subplot_titles=(
+            "Normal (ingrediente → produto)",
+            "Reverso (produto → ingrediente)",
         ),
-    ))
+    )
+    for column, (key, color) in enumerate(
+        (("normal", "#f2b84b"), ("reverse", "#4aa3df")), start=1
+    ):
+        ranking = rankings[key]
+        figure.add_trace(go.Bar(
+            x=[row["score"] for row in ranking],
+            y=[short_name(row["name"]) for row in ranking],
+            orientation="h",
+            marker={"color": color},
+            customdata=[
+                [row["name"], row["in_degree"], row["out_degree"]] for row in ranking
+            ],
+            hovertemplate=(
+                "Nó: %{customdata[0]}<br>PageRank: %{x:.6f}"
+                "<br>Grau de entrada: %{customdata[1]}"
+                "<br>Grau de saída: %{customdata[2]}<extra></extra>"
+            ),
+        ), row=1, col=column)
 
+    figure.update_xaxes(title_text="PageRank")
+    figure.update_yaxes(autorange="reversed", automargin=True)
     figure.update_layout(
-        title=f"Top {top} nós por PageRank",
-        xaxis={"title": "PageRank"},
-        yaxis={"title": "Nó", "autorange": "reversed", "automargin": True},
+        title=f"Top {top} nós por PageRank (normal e reverso)",
+        showlegend=False,
         template="plotly_dark",
         paper_bgcolor="#17212b",
         plot_bgcolor="#17212b",
-        margin={"l": 180, "r": 15, "t": 60, "b": 15},
+        margin={"l": 15, "r": 15, "t": 80, "b": 40},
     )
     return figure
 
