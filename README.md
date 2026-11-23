@@ -58,6 +58,26 @@ Usar outra pasta de receitas:
 python .\read_recipes.py "C:\dados\minecraft\recipe" --no-plot
 ```
 
+Abrir todos os gráficos em páginas separadas:
+
+```powershell
+python .\read_recipes.py --all-graphs
+```
+
+Abrir uma análise específica:
+
+```powershell
+python .\read_recipes.py --degree       # distribuição linear de graus
+python .\read_recipes.py --degree-log   # distribuição log-log de graus
+python .\read_recipes.py --clustering   # distribuição do clustering
+python .\read_recipes.py --pagerank     # ranking dos principais nós
+python .\read_recipes.py --fragility    # impacto da ausência de recursos
+python .\read_recipes.py --communities  # comunidades e itens-ponte
+```
+
+Adicionar `--no-plot` quando as análises devem ser feitas apenas no terminal,
+por exemplo `python .\read_recipes.py --all-graphs --no-plot`.
+
 O terminal informa o número de nós, arestas, arquivos de receitas carregados,
 variantes e receitas ignoradas. Cada entrada ignorada é listada com seu motivo.
 
@@ -170,6 +190,40 @@ O grau de saída conta **produtos distintos**, não o número de receitas. Já o
 grau de entrada inclui todos os ingredientes possíveis, inclusive alternativas:
 não significa que todos sejam obrigatórios simultaneamente.
 
+## Distribuição de grau, clustering e PageRank
+
+### Distribuição de grau
+
+O gráfico linear mostra quantos nós possuem cada grau de entrada ou saída.
+O gráfico log-log conserva apenas graus maiores que zero e ajuda a examinar a
+cauda da distribuição. Uma aparência aproximada de reta é apenas uma pista; ela
+não prova por si só que o grafo seja livre de escala.
+
+### Clustering local
+
+O clustering local mede quanto os vizinhos de um nó estão conectados entre si.
+Como o grafo é dirigido, ele é calculado na projeção não dirigida. Um coeficiente
+próximo de 1 indica uma vizinhança bastante fechada, enquanto 0 indica que os
+vizinhos não formam arestas entre si. O gráfico compara a quantidade de nós em
+cada faixa do coeficiente.
+
+### PageRank
+
+O PageRank mede influência estrutural no grafo dirigido. Ao longo das arestas
+`ingrediente → produto`, um nó recebe influência dos itens que apontam para ele
+e de nós apontadores que já têm importância própria.
+
+PageRank não é apenas o número de entradas. Ele responde quais nós ocupam posições
+mais influentes no fluxo do grafo e pode ser usado para ranquear os vértices mais
+importantes. O gráfico apresenta os maiores valores em barras horizontais.
+
+```powershell
+python .\read_recipes.py --degree
+python .\read_recipes.py --degree-log
+python .\read_recipes.py --clustering
+python .\read_recipes.py --pagerank
+```
+
 ## Análise de fragilidade por recurso
 
 `analytics.py` responde: *se um recurso base deixar de existir, quantos itens
@@ -217,6 +271,30 @@ Na figura, as 12 maiores comunidades têm cor própria, as demais ficam em cinza
 os itens-ponte são circulados com o número de comunidades vizinhas.
 Como as tags `(any)` não são ligadas aos itens que representam, a comunidade
 de `planks(any)` e das camas reflete essa limitação do modelo.
+
+## Comparação com grafos sintéticos
+
+`compare_synthetic.py` compara o grafo de receitas com três modelos equivalentes
+(mesmo número de nós e aproximadamente de arestas): **ER** (aleatório),
+**BA** (livre de escala) e **Watts-Strogatz** (small world).
+
+```powershell
+python .\compare_synthetic.py                 # tabela, CSV e gráficos em .\figures_synthetic
+python .\compare_synthetic.py --samples 30    # mais sorteios por modelo
+python .\compare_synthetic.py --ws-p 0.05     # outra probabilidade de religação
+python .\compare_synthetic.py --no-plot       # só a tabela
+```
+
+Método: os modelos são não dirigidos, então o grafo é convertido para não dirigido
+e sem laços. Caminho médio e diâmetro exigem grafo conexo, por isso real e sintéticos
+são comparados na **maior componente conexa**. Cada modelo é sorteado várias vezes
+(semente fixa) e reportam-se média e desvio padrão. Parâmetros: ER com as mesmas
+arestas; BA com `round(m/n)` arestas por nó novo; WS com `k = 2·round(m/n)`.
+
+Métricas: grau médio e máximo, clustering, transitividade, caminho médio, diâmetro,
+assortatividade, distância KS entre as distribuições de grau e o índice small world
+σ = (C/C_ER)/(L/L_ER). Gráficos gerados: CCDF do grau (log-log), barras das métricas
+e o mapa C/C_ER × L/L_ER.
 
 ## PageRank nos dois sentidos
 
@@ -351,17 +429,19 @@ graph
 ├── read_recipes.py       Leitura, normalização e construção do grafo
 ├── plot_graph.py         Figura Plotly e interações no navegador
 ├── analytics.py          Fragilidade, comunidades (Louvain), PageRank e centralidade
+├── compare_synthetic.py  Comparação com ER, BA e Watts-Strogatz
 ├── recipe\               Arquivos JSON de entrada
 ├── requirements.txt      Dependências
 ├── test_read_recipes.py  Testes do leitor e da deduplicação
 ├── test_analytics.py     Testes de fragilidade, comunidades, PageRank e centralidade
-└── test_plot_graph.py    Testes da página e da abertura única
+├── test_plot_graph.py    Testes da página e da abertura única
+└── test_compare_synthetic.py  Testes da comparação sintética
 ```
 
 ## Testes
 
 ```powershell
-python -m unittest -v test_read_recipes test_plot_graph test_analytics
+python -m unittest -v test_read_recipes test_plot_graph test_analytics test_compare_synthetic
 ```
 
 Os testes cobrem contagem de ingredientes, alternativas, métodos, deduplicação,
